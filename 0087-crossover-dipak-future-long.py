@@ -23,7 +23,7 @@ RSI_LENGTH = 25
 RSI_BUY = 55
 RSI_SELL = 45  # not used here (long-only)
 CI_LEN = 14
-CI_MID = 50
+CI_MID = 45
 VOL_SMA = 14
 LOWAVG_LEN = 14
 HIGHAVG_LEN = 14
@@ -197,7 +197,8 @@ def compute_signals(symbol: str):
         (cross_kind == "bullish") &
         (last['touch_ema8_low'] == True) &
         (last['rsi'] >= RSI_BUY) &
-        (last['bullish_candle'] == True)
+        (last['bullish_candle'] == True) &
+        (last['ci'] < CI_MID) 
     )
 
     # BUY ON DIPS:
@@ -205,7 +206,8 @@ def compute_signals(symbol: str):
     buy_on_dips_signal = (
         (last['bullish_candle'] == True) &
         (last['close'] > last['lowAvg']) &
-        (last['open'] <= last['lowAvg'])
+        (last['open'] <= last['lowAvg']) &
+        (last['ci'] < CI_MID) 
     )
 
     # CMF dip assist (optional): between -0.05 and 0.10 and showing upward momentum
