@@ -83,34 +83,37 @@ def smi_tradingview(df, length=21, smooth_k=5, smooth_d=5):
 
     return smi, smi_signal
 
-def check_conditions(symbol):
-    # --- use 15m candles ---
-    df = get_klines(symbol, interval="15m", limit=300)
+def get_latest_smi(symbol, interval="15m"):
+    df = get_klines(symbol, interval=interval, limit=300)
     if df.empty or len(df) < 50:
-        print(f"⛔ {symbol} - Not enough candles ({len(df)})")
+        return None, None, None
+    smi_series, smi_signal_series = smi_tradingview(df, length=21, smooth_k=5, smooth_d=5)
+    return (
+        float(df['close'].iat[-1]),
+        float(smi_series.iat[-1]),
+        float(smi_signal_series.iat[-1])
+    )
+
+def check_conditions(symbol):
+    # --- 15m timeframe ---
+    close_15, smi_15, signal_15 = get_latest_smi(symbol, interval="15m")
+    if smi_15 is None:
         return None
 
-    # --- Compute SMI (TradingView style) ---
-    try:
-        smi_series, smi_signal_series = smi_tradingview(df, length=21, smooth_k=5, smooth_d=5)
-        smi_val = float(smi_series.iat[-1])
-        smi_signal_val = float(smi_signal_series.iat[-1])
-        close_val = float(df['close'].iat[-1])
-    except Exception as e:
-        print(f"⚠️ {symbol} - Error computing SMI: {e}")
-        return None
-
-    if any(math.isnan(x) for x in [smi_val, smi_signal_val, close_val]):
-        print(f"⚠️ {symbol} - NaN in indicators")
+    # --- 30m timeframe ---
+    close_30, smi_30, signal_30 = get_latest_smi(symbol, interval="30m")
+    if smi_30 is None:
         return None
 
     # Debug print
-    print(f"📈 {symbol} - Close={close_val:.6f}, SMI={smi_val:.4f}, Signal={smi_signal_val:.4f}")
+    print(f"📊 {symbol} | 15m SMI={smi_15:.2f}/{signal_15:.2f}, 30m SMI={smi_30:.2f}/{signal_30:.2f}")
 
     # --- Strategy Condition ---
-    # Check: SMI above its EMA signal and SMI < 0
-    if not (smi_val > smi_signal_val and smi_val < 0):
-        print(f"🔴 {symbol} - SMI condition failed (SMI={smi_val:.2f}, Signal={smi_signal_val:.2f})")
+    cond_15 = smi_15 > signal_15 and smi_15 < 0
+    cond_30 = smi_30 > signal_30
+
+    if not (cond_15 and cond_30):
+        print(f"🔴 {symbol} - Condition failed")
         return None
 
     # --- Volume filter ---
@@ -122,15 +125,17 @@ def check_conditions(symbol):
     print(f"🟢 {symbol} passed all checks")
     return {
         "symbol": symbol,
-        "price": round(close_val, 6),
+        "price": round(close_15, 6),
         "volume": round(volume_24h),
         "sg_time": get_singapore_time(),
-        "smi": smi_val,
-        "smi_signal": smi_signal_val
+        "smi_15": smi_15,
+        "signal_15": signal_15,
+        "smi_30": smi_30,
+        "signal_30": signal_30,
     }
 
 def run_strategy():
-    print("🔍 Starting 15m Futures Signal Screener...\n")
+    print("🔍 Starting Futures Signal Screener (15m + 30m)...\n")
     start_time = time.time()
 
     target_symbols = load_symbol_list("future_usdt_usdm_pairs.txt")
@@ -152,11 +157,12 @@ def run_strategy():
             result = check_conditions(symbol)
             if result:
                 msg = (
-                    f"✅ 15m Futures Signal\n"
+                    f"✅ Futures Signal\n"
                     f"Symbol: {result['symbol']}\n"
                     f"Price: {result['price']}\n"
                     f"Volume: {result['volume']}\n"
-                    f"SMI: {result['smi']:.2f} (Signal: {result['smi_signal']:.2f})\n"
+                    f"15m SMI: {result['smi_15']:.2f} (Signal: {result['signal_15']:.2f})\n"
+                    f"30m SMI: {result['smi_30']:.2f} (Signal: {result['signal_30']:.2f})\n"
                     f"Time (SGT): {result['sg_time']}"
                 )
                 send_telegram_message(msg)
@@ -174,7 +180,7 @@ def run_strategy():
     print(f"\n✅ Done.\n🔢 Total Symbols: {total}\n📤 Signals Sent: {signals_sent}\n⏱️ Time: {duration:.2f} sec")
 
     summary = (
-        f"✅ 15m Futures Scan Complete\n"
+        f"✅ Futures Scan Complete (15m + 30m)\n"
         f"Total Symbols: {total}\n"
         f"Signals Sent: {signals_sent}\n"
         f"Time: {duration:.2f} sec"
