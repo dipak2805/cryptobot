@@ -66,19 +66,14 @@ def smi_tradingview(df, length=21, smooth_k=5, smooth_d=5):
     low = df['low']
     close = df['close']
 
-    # Midpoint and range
     hl = (high.rolling(length).max() + low.rolling(length).min()) / 2
     diff = close - hl
     hl_range = (high.rolling(length).max() - low.rolling(length).min())
 
-    # Double smooth numerator and denominator
     diff_smoothed = diff.ewm(span=smooth_k).mean().ewm(span=smooth_k).mean()
     hl_smoothed = hl_range.ewm(span=smooth_k).mean().ewm(span=smooth_k).mean()
 
-    # Final SMI
     smi = 100 * (diff_smoothed / (hl_smoothed / 2))
-
-    # Signal line = EMA of SMI (not re-computed)
     smi_signal = smi.ewm(span=smooth_d).mean()
 
     return smi, smi_signal
@@ -98,40 +93,28 @@ def check_conditions(symbol):
     # --- 15m timeframe ---
     close_15, smi_15, signal_15 = get_latest_smi(symbol, interval="15m")
     if smi_15 is None:
-        print(f"🔴 {symbol} - Not enough data on 15m timeframe")
         return None
 
     # --- 30m timeframe ---
     close_30, smi_30, signal_30 = get_latest_smi(symbol, interval="30m")
     if smi_30 is None:
-        print(f"🔴 {symbol} - Not enough data on 30m timeframe")
         return None
 
     # Debug print
     print(f"📊 {symbol} | 15m SMI={smi_15:.2f}/{signal_15:.2f}, 30m SMI={smi_30:.2f}/{signal_30:.2f}")
 
-    # --- Strategy Condition ---
-    cond_15_a = smi_15 > signal_15
-    cond_15_b = smi_15 < 0
-    cond_30 = smi_30 > signal_30
+    # --- Strategy Condition for SHORT ---
+    cond_15 = smi_15 < signal_15 and smi_15 > 0
+    cond_30 = smi_30 < signal_30
 
-    if not cond_15_a:
-        print(f"🔴 {symbol} - Failed: 15m SMI <= Signal ({smi_15:.2f} <= {signal_15:.2f})")
-        return None
-    if not cond_15_b:
-        print(f"🔴 {symbol} - Failed: 15m SMI not below 0 ({smi_15:.2f})")
-        return None
-    if not cond_30:
-        print(f"🔴 {symbol} - Failed: 30m SMI <= Signal ({smi_30:.2f} <= {signal_30:.2f})")
+    if not (cond_15 and cond_30):
+        print(f"🔴 {symbol} - Condition failed")
         return None
 
     # --- Volume filter ---
     volume_24h = get_24h_stats(symbol)
-    if volume_24h is None:
-        print(f"🔴 {symbol} - Failed: Could not fetch 24h volume")
-        return None
-    if volume_24h < 20_000_000:
-        print(f"🔴 {symbol} - Failed: Volume < $20M ({volume_24h:,.0f})")
+    if volume_24h is None or volume_24h < 20_000_000:
+        print(f"🔴 {symbol} - Volume < $20M ({volume_24h})")
         return None
 
     print(f"🟢 {symbol} passed all checks")
@@ -147,7 +130,7 @@ def check_conditions(symbol):
     }
 
 def run_strategy():
-    print("🔍 Starting Futures Signal Screener (15m + 30m)...\n")
+    print("🔍 Starting Futures SHORT Screener (15m + 30m)...\n")
     start_time = time.time()
 
     target_symbols = load_symbol_list("future_usdt_usdm_pairs.txt")
@@ -169,7 +152,7 @@ def run_strategy():
             result = check_conditions(symbol)
             if result:
                 msg = (
-                    f"✅ Futures Signal\n"
+                    f"⚠️ Futures SHORT Signal\n"
                     f"Symbol: {result['symbol']}\n"
                     f"Price: {result['price']}\n"
                     f"Volume: {result['volume']}\n"
@@ -184,7 +167,7 @@ def run_strategy():
             print(f"❌ Error processing {symbol}: {e}")
         time.sleep(0.1)
 
-    with open("future_usdt_15m_signal.txt", "w") as f:
+    with open("future_usdt_15m_short_signal.txt", "w") as f:
         for sym in valid_signals:
             f.write(sym + "\n")
 
@@ -192,7 +175,7 @@ def run_strategy():
     print(f"\n✅ Done.\n🔢 Total Symbols: {total}\n📤 Signals Sent: {signals_sent}\n⏱️ Time: {duration:.2f} sec")
 
     summary = (
-        f"✅ Futures Scan Complete (15m + 30m)\n"
+        f"⚠️ Futures SHORT Scan Complete (15m + 30m)\n"
         f"Total Symbols: {total}\n"
         f"Signals Sent: {signals_sent}\n"
         f"Time: {duration:.2f} sec"
